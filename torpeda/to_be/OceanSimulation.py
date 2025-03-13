@@ -16,7 +16,6 @@ import pickle
 
 from matplotlib.figure import Figure
 
-# Функция для расчёта динамики лодки
 def EquationsOfLodka(X, Y, Phi, Vx, Vy, Omega, F_dv, alpha):
     global m, J, a, Cl, Cb, Cvr, Sl, Sb, Rho
     Vl = Vx * np.cos(Phi) + Vy * np.sin(Phi)
@@ -29,7 +28,6 @@ def EquationsOfLodka(X, Y, Phi, Vx, Vy, Omega, F_dv, alpha):
     Epsilon = (-Ms + a * F_dv * np.sin(alpha)) / J
     return [Vx, Vy, Omega, Wx, Wy, Epsilon]
 
-# Функция для расчёта динамики торпеды
 def EquationsOfTorpeda(X, Y, Phi, Vx, Vy, Omega, alpha):
     global mT, JT, aT, ClT, CbT, CvrT, SlT, SbT, Rho, VoT, R
     Vl = Vx * np.cos(Phi) + Vy * np.sin(Phi)
@@ -44,7 +42,6 @@ def EquationsOfTorpeda(X, Y, Phi, Vx, Vy, Omega, alpha):
     Epsilon = (-Ms + aT * F_r * np.cos(alpha)) / JT
     return [Vx, Vy, Omega, Wx, Wy, Epsilon]
 
-# Функция для вычисления управляющего сигнала по курсу (резервный вариант)
 def GetCourse(X, Y, XT, YT, PhiT):
     Beta = np.arctan2(Y - YT, X - XT) - PhiT
     while abs(Beta) > np.pi:
@@ -52,22 +49,20 @@ def GetCourse(X, Y, XT, YT, PhiT):
     if abs(Beta) < 0.7 and (Y - YT)**2 + (X - XT)**2 < 30**2:
         V = 1
         alpha = Beta
-        if alpha > 0.6:
-            alpha = 0.6
-        elif alpha < -0.6:
-            alpha = -0.6
+        if alpha > 0.4:
+            alpha = 0.4
+        elif alpha < -0.4:
+            alpha = -0.4
     else:
         V = 0
         alpha = 0
     return alpha, V
 
-# Функция поворота координат на заданный угол
 def Rot2D(X, Y, Alpha):
     RX = X * np.cos(Alpha) - Y * np.sin(Alpha)
     RY = X * np.sin(Alpha) + Y * np.cos(Alpha)
     return RX, RY
 
-# Основной класс приложения
 class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
 
     def __init__(self):
@@ -80,9 +75,10 @@ class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
         global m, J, a, Cl, Cb, Cvr, Sl, Sb, Rho, \
                X, Y, Phi, Vx, Vy, Omega, F_dv, alpha, t, F_dv_max, \
                mT, JT, aT, ClT, CbT, CvrT, SlT, SbT, VoT, R, \
-               XT, YT, PhiT, VxT, VyT, OmegaT, Explode, r_E
+               XT, YT, PhiT, VxT, VyT, OmegaT, Explode, r_E, \
+               free_mode, free_direction, last_seen_heading, engage_threshold, search_start_time
 
-        # Считываем параметры лодки из интерфейса
+        # Считываем параметры лодки
         m = float(self.m_Edit.text())
         a = float(self.a_Edit.text())
         J = float(self.J_Edit.text())
@@ -110,23 +106,21 @@ class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
         X = float(self.X_Edit.text())
         Y = float(self.Y_Edit.text())
         Phi = float(self.Phi_Edit.text())
-        Vx = float(self.Vx_Edit.text())
-        Vy = float(self.Vy_Edit.text())
+        Vx = float(self.Vx_Edit.text())    # задаётся вручную через интерфейс
+        Vy = float(self.Vy_Edit.text())    # задаётся вручную через интерфейс
         Omega = float(self.Omega_Edit.text())
 
         # Считываем начальные данные торпеды
         XT = float(self.XT_Edit.text())
         YT = float(self.YT_Edit.text())
         PhiT = float(self.PhiT_Edit.text())
-        VxT = float(self.VxT_Edit.text())
-        VyT = float(self.VyT_Edit.text())
+        VxT = float(self.VxT_Edit.text())  # задаётся вручную через интерфейс
+        VyT = float(self.VyT_Edit.text())  # задаётся вручную через интерфейс
         OmegaT = float(self.OmegaT_Edit.text())
 
-        # Настройка графики
         self.morewidget.canvas.axes.axis('equal')
         self.morewidget.canvas.axes.set(xlim=[-40 * a, 40 * a], ylim=[-40 * a, 40 * a])
 
-        # Вычисляем контуры лодки и торпеды для отрисовки
         L_X = np.array([-a, -a/3, a/3, a, 5/3*a, a, a/3, -a/3, -a, -a])
         L_Y = np.array([0.4*a, a/2, a/2, 0.4*a, 0, -0.4*a, -a/2, -a/2, -0.4*a, 0.4*a])
         T_X = aT * np.array([-1.1, -0.9, -0.8, 0.75, 0.8, 0.75, -0.8, -0.9, -1.1, -1.1])
@@ -136,7 +130,6 @@ class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
         DrawedLodka = self.morewidget.canvas.axes.plot(X + LodkaX, Y + LodkaY, color=[0, 0, 1])[0]
         DrawedTorpeda = self.morewidget.canvas.axes.plot(XT + TorpedaX, YT + TorpedaY, color=[1, 0, 0])[0]
 
-        # Инициализация переменных симуляции
         F_dv_max = 200
         alpha = 0.1
         dt = 0.1
@@ -144,74 +137,91 @@ class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
         Explode = 0
         r_E = 0.5
 
-        # Рассчитываем эффективную скорость торпеды (VT) по её характеристикам
+        # Порог расстояния для перехода в engaged режим
+        engage_threshold = 30
+
+        # Инициализация режима свободной охоты и параметров поиска
+        free_mode = True         # по умолчанию в свободном режиме
+        free_direction = 0       # базовое направление свободного полёта (можно задать вручную)
+        # last_seen_heading сохраняет последнее направление на цель, если она была замечена
+        last_seen_heading = None 
+        # search_start_time – время, когда ракета перешла в режим спирального поиска
+        search_start_time = None
+
+        # Рассчитываем эффективную скорость торпеды (VT)
         VT = np.sqrt(np.pi * 2) * VoT * R / np.sqrt(ClT * SlT + 2 * np.pi * R**2)
         print("VT:", VT)
-        # Начальное вычисление интерцепционного времени и корректировка PhiT (однократно)
         T0 = (np.sqrt( -(Y - YT)**2 * Vx**2 + 2*Vy*(Y - YT)*(X - XT)*Vx - (X - XT)**2 * Vy**2 + VT**2*(X**2 - 2*X*XT + XT**2 + (Y - YT)**2)) + (X - XT)*Vx + (Y - YT)*Vy) / (-Vy**2 - Vx**2 + VT**2)
         print("T0:", T0)
         PhiT = np.arctan2((Y + Vy * T0 - YT) / (VT * T0), (X + Vx * T0 - XT) / (VT * T0))
         print("Initial PhiT:", PhiT)
 
-        # Основная функция, вызываемая на каждом шаге анимации
         def kadr(j):
             global X, Y, Phi, Vx, Vy, Omega, F_dv, alpha, t, F_dv_max, \
-                   XT, YT, PhiT, VxT, VyT, OmegaT, Explode, r_E
+                   XT, YT, PhiT, VxT, VyT, OmegaT, Explode, r_E, \
+                   free_mode, free_direction, last_seen_heading, engage_threshold, search_start_time
 
-            # Проверка на столкновение: если объекты слишком близко – запускаем эффект взрыва
+            # Проверка столкновения
             if ((X - XT)**2 + (Y - YT)**2 < (a + aT)**2):
                 Explode = 1
 
             if Explode == 0:
-                # Получаем управляющие воздействия для лодки
                 alpha = self.alpha_dial.value() / 100
                 F_dv = self.ForceSlider.value() * F_dv_max / 100
-
-                # Вычисляем текущее расстояние между лодкой и торпедой
                 current_distance = np.sqrt((X - XT)**2 + (Y - YT)**2)
 
-                # *** Интерцепционное наведение ***
-                # Решаем квадратное уравнение для времени перехвата:
-                # (dx + Vx*T)^2 + (dy + Vy*T)^2 = (VT*T)^2,
-                # где dx = X - XT, dy = Y - YT.
-                dx = X - XT
-                dy = Y - YT
-                A = Vx**2 + Vy**2 - VT**2
-                B = 2 * (dx * Vx + dy * Vy)
-                C = dx**2 + dy**2
-                discriminant = B**2 - 4 * A * C
+                # Если корабль ближе engage_threshold, переходим в режим наведения (engaged)
+                if current_distance < engage_threshold:
+                    free_mode = False
+                    # Сохраняем последнее направление на цель
+                    last_seen_heading = np.arctan2(Y - YT, X - XT)
+                    # Интерцепционное наведение
+                    dx = X - XT
+                    dy = Y - YT
+                    A = Vx**2 + Vy**2 - VT**2
+                    B = 2 * (dx * Vx + dy * Vy)
+                    C = dx**2 + dy**2
+                    discriminant = B**2 - 4 * A * C
 
-                if A != 0 and discriminant >= 0:
-                    T_candidate = (-B - np.sqrt(discriminant)) / (2 * A)
-                    if T_candidate <= 0:
-                        T_candidate = (-B + np.sqrt(discriminant)) / (2 * A)
-                    if T_candidate > 0:
-                        # Вычисляем точку перехвата для корабля
-                        X_int = X + Vx * T_candidate
-                        Y_int = Y + Vy * T_candidate
-                        # Определяем желаемое направление от торпеды к точке перехвата
-                        desired_heading = np.arctan2(Y_int - YT, X_int - XT)
-                        alphaT = desired_heading - PhiT
-                        # Ограничиваем управляющее воздействие
-                        max_alpha = 0.6
-                        if alphaT > max_alpha:
-                            alphaT = max_alpha
-                        elif alphaT < -max_alpha:
-                            alphaT = -max_alpha
-                        V = 1
+                    if A != 0 and discriminant >= 0:
+                        T_candidate = (-B - np.sqrt(discriminant)) / (2 * A)
+                        if T_candidate <= 0:
+                            T_candidate = (-B + np.sqrt(discriminant)) / (2 * A)
+                        if T_candidate > 0:
+                            X_int = X + Vx * T_candidate
+                            Y_int = Y + Vy * T_candidate
+                            desired_heading = np.arctan2(Y_int - YT, X_int - XT)
+                            alphaT = desired_heading - PhiT
+                        else:
+                            alphaT, V = GetCourse(X, Y, XT, YT, PhiT)
                     else:
-                        # Если положительного решения нет, используем резервное управление
                         alphaT, V = GetCourse(X, Y, XT, YT, PhiT)
+                    V = 1
+                    # Сбрасываем search_start_time, так как engaged режим активен
+                    search_start_time = None
                 else:
-                    # Если нет решения (например, отрицательный дискриминант), используем резервное управление
-                    alphaT, V = GetCourse(X, Y, XT, YT, PhiT)
+                    # Если корабль вне порога, переходим в режим свободной охоты
+                    free_mode = True
+                    # Если цель была замечена ранее, запускаем спиральный поиск
+                    if last_seen_heading is not None:
+                        # Если только что перешли в свободный режим, зафиксируем время начала поиска
+                        if search_start_time is None:
+                            search_start_time = t
+                        spiral_rate = 0.2  # угловая скорость спирали (рад/с)
+                        free_direction = last_seen_heading + spiral_rate * (t - search_start_time)
+                    # Если цель никогда не была замечена, free_direction остаётся прежним
+                    alphaT = free_direction - PhiT
+                    max_alpha = 0.3
+                    if alphaT > max_alpha:
+                        alphaT = max_alpha
+                    elif alphaT < -max_alpha:
+                        alphaT = -max_alpha
+                    V = 1
 
-                # Расчет динамики для лодки
+                # Расчёт динамики
                 Vx, Vy, Omega, Wx, Wy, Epsilon = EquationsOfLodka(X, Y, Phi, Vx, Vy, Omega, F_dv, alpha)
-                # Расчет динамики для торпеды с использованием интерцепционного управления
                 VxT, VyT, OmegaT, WxT, WyT, EpsilonT = EquationsOfTorpeda(XT, YT, PhiT, VxT, VyT, OmegaT, alphaT)
 
-                # Обновляем состояния объектов методом Эйлера
                 X += Vx * dt
                 Y += Vy * dt
                 Phi += Omega * dt
@@ -228,19 +238,19 @@ class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
 
                 t += dt
 
-                # Обновляем отрисовку: поворачиваем контуры объектов согласно их текущим углам
                 LodkaX, LodkaY = Rot2D(L_X, L_Y, Phi)
                 DrawedLodka.set_data(X + LodkaX, Y + LodkaY)
                 TorpedaX, TorpedaY = Rot2D(T_X, T_Y, PhiT)
                 DrawedTorpeda.set_data(XT + TorpedaX, YT + TorpedaY)
 
-                print("PhiT:", PhiT)
-                if V == 0:
-                    DrawedTorpeda.set_color([0, 0.7, 0])
+                # Цветовая индикация: красный, если engaged; зеленый, если в свободном (спиральном) поиске.
+                if free_mode:
+                    DrawedTorpeda.set_color([0, 1, 0])
                 else:
                     DrawedTorpeda.set_color([1, 0, 0])
+
+                print("PhiT:", PhiT)
             else:
-                # Эффект взрыва: визуальное отображение
                 Betas = np.linspace(0, 2, 41) * np.pi
                 r_Explosion = (1 + np.sin(5 * Betas)) * 5 * a * (1 + 1 / (-1 - r_E))
                 X_Explosion = np.concatenate([r_Explosion * np.cos(Betas), r_Explosion * np.sin(Betas)])
@@ -251,12 +261,10 @@ class OceanWidget(QMainWindow, OceanWindow.Ui_MainWindow):
 
             return [DrawedLodka, DrawedTorpeda]
 
-        # Запускаем анимацию с заданным интервалом
         multik = FuncAnimation(self.morewidget.canvas.figure, kadr, interval=dt * 200, blit=True)
         self.morewidget.canvas.draw()
         return
 
-# Запуск приложения
 app = QApplication([])
 window = OceanWidget()
 window.show()
